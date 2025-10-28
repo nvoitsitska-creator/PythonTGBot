@@ -1,3 +1,4 @@
+import re
 from tkinter.commondialog import Dialog
 
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
@@ -10,6 +11,8 @@ from credentials import ChatGPT_TOKEN,BOT_TOKEN
 from telegram.error import Conflict,NetworkError
 from dotenv import load_dotenv
 import os
+import asyncio
+
 
 logging.basicConfig(
     format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -29,7 +32,8 @@ async def start(update:Update,context: ContextTypes.DEFAULT_TYPE):
         "random": "Дізнайся цікавий факт",
         "gpt": "Запитай у чату GPT",
         "talk": "Поговори з відомою особистістю",
-        "quiz": "Візьми участь у квізі"
+        "quiz": "Візьми участь у квізі",
+        "translate": "Перекладу текст"
     })
 
 async def random_fact(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -88,6 +92,7 @@ async def dialog_with_star(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "star_opra": "Опра Вімфрі",
         "star_enshtein": "Альберт Енштейн",
         "star_vinchi": "Леонардо ДаВінчі",
+        "start": "Повернутися у Головне меню"
     })
 
 async def star_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -105,7 +110,7 @@ async def star_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_gpt.set_prompt(prompt)
     except Exception as e:
         logger.error(f'Не вдалося завантажити промпт для {data}: {e}')
-        await send_text(update,context,"На жаль, виникла помилка при завантаженні профілю особистості.")
+        await send_text(update,context,"На жаль, виникла помилка при завантаженні відповіді.")
         return
 
     context.user_data['current_star'] = data
@@ -135,27 +140,181 @@ async def star_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f'Помилка під час діалогу із зіркою: {e}')
         await send_text(update,context,'Виникла помилка під час спілкування. Спробуйте ще раз.')
 
+async def quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    context.user_data['mode'] = 'quiz'
+    msg = load_message('quiz')
+    await send_image(update, context, 'quiz')
+    await send_text_buttons(update, context, msg, {
+        "quiz_general":"Загальні знання",
+        "quiz_history":"Історичні факти та дати",
+        "quiz_science":"Наукові відкриття",
+        "quiz_art":"Культура і мистецтво",
+        "start":"⬅️ Повернутись у головне меню"
+    })
+
+async def quiz_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    await query.answer()
+
+    await send_image(update, context, data)
+    await send_text(update, context,"Гарний вибір!")
+
+    prompt = load_prompt(data)
+    if not prompt:
+        await send_text(update,context,"⚠️ Не вдалося завантажити тему квізу.")
+        return
+
+    chat_gpt.set_prompt(prompt)
+    context.user_data['current_quiz'] = data
+    context.user_data['mode'] = 'quiz'
+    context.user_data['score']=0
+    context.user_data['question_number']=1
+
+    await send_text_buttons(
+        update,
+        context,
+        f"👤 Ви почали квіз на тему *{data}*.\nПерше питання вже готується.",
+        {"start": "⬅️ Повернутись у головне меню"}
+    )
+    await ask_quiz_question(update,context)
+
+async def ask_quiz_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    current_quiz = context.user_data.get("current_quiz")
+    prompt = load_prompt(current_quiz)
+
+    question_text = await chat_gpt.send_question(
+        prompt,
+        "Згенеруй одне коротке питання для квізу з 4 варіантами відповідей (A–D) і вкажи правильну відповідь у кінці."
+    )
+    parts = question_text.split("Правильна відповідь:")
+    only_question = parts[0].strip()
+    await send_text(update, context, only_question)
+
+    match = re.search(r"Правильна відповідь:\s*([A-D])", question_text)
+    if match:
+        context.user_data["correct_answer"] = match.group(1).upper()
+    else:
+        context.user_data["correct_answer"] = None
+
+async def quiz_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_answer = update.message.text.strip().upper()
+    correct = context.user_data.get("correct_answer")
+
+    if not correct:
+        await send_text(update,context,"⚠️ Спочатку дочекайтесь питання.")
+        return
+    if user_answer == correct:
+        context.user_data["score"] += 1
+        await send_image(update,context,"correct_answer")
+        await send_text(update,context,f"✅ Правильно! Поточний рахунок: {context.user_data['score']}")
+    else:
+        await send_image(update, context, "wrong_answer")
+        await send_text(update,context,f"❌ Неправильно. Правильна відповідь: {correct}.Поточний рахунок: {context.user_data['score']}" )
+
+    context.user_data["question_number"]+=1
+    await asyncio.sleep(1)
+    await ask_quiz_question(update,context)
+
+async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    context.user_data['mode'] = 'translate'
+    msg = load_message('translate')
+    await send_image(update, context, 'translate')
+    await send_text_buttons(update, context, msg, {
+        "translate_english": "Англійська",
+        "translate_spanish": "Іспанська",
+        "translate_polish": "Польська",
+        "translate_arabic": "Арабська",
+        "start": "⬅️ Повернутись у головне меню"
+    })
+
+async def languages_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    await query.answer()
+    try:
+        await send_image(update, context, data)
+    except FileNotFoundError:
+        await send_text(update,context, "Зображення не знайдено, але я все одно можу перекласти твій текст 🙂")
+
+    try:
+        prompt = load_prompt(data)
+        chat_gpt.set_prompt(prompt)
+    except Exception as e:
+        logger.error(f'Не вдалося завантажити промпт для {data}: {e}')
+        await send_text(update,context,"На жаль, виникла помилка при завантаженні відповіді.")
+        return
+
+    context.user_data['current_language'] = data
+    context.user_data['mode'] = 'translate'
+
+    choose_language = data.replace('translate_', '').capitalize()
+    await send_text_buttons(
+        update,
+        context,
+        f"👤 Ви обрати *{choose_language}* мову.\nНадішліть текст, щоб отримати переклад.",
+        {"start": "⬅️ Повернутись у головне меню"}
+    )
+
+async def translate_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    try:
+        choose_language = context.user_data.get('current_language')
+        if not choose_language:
+            await send_text(update, context, "Будь ласка, спершу оберіть мову.")
+            return
+
+        prompt = load_prompt(choose_language)
+
+        answer = await chat_gpt.send_question(prompt, text)
+        buttons = {
+            'languages_button': 'Хочу обрати іншу мову',
+            'start': 'Завершити'}
+
+        await send_text_buttons(update, context,answer,buttons)
+        # await send_text(update, context, answer)
+
+    except Exception as e:
+        logger.error(f'Помилка під час перекладу: {e}')
+        await send_text(update,context,'Виникла помилка під час перекладу. Спробуйте ще раз.')
+
+async def translate_buttons(update:Update,context:ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+
+    if data == "languages_button":
+        await translate(update,context)
+    elif data == "start":
+        await start(update,context)
+
 async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = context.user_data.get('mode')
     if mode == 'gpt':
         await gpt_dialog(update,context)
     elif mode == 'star':
         await star_dialog(update,context)
-
-
-dialog = Dialog()
-dialog.mode = None
-dialog.list = []
-dialog.user = {}
-dialog.counter = 0
+    elif mode == 'quiz':
+        await quiz_dialog(update,context)
+    elif mode == "translate":
+        await translate_answer(update,context)
+    else:
+        await send_text(update,context, "Будь ласка, оберіть команду з меню.")
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("random", random_fact))
 app.add_handler(CallbackQueryHandler  (random_buttons, pattern="^(random|start)$"))
+app.add_handler(CallbackQueryHandler  (translate_buttons, pattern="^(languages_button|start)$"))
 app.add_handler(CommandHandler("gpt", gpt))
 app.add_handler(CommandHandler("talk", dialog_with_star))
+app.add_handler(CommandHandler("quiz", quiz))
+app.add_handler(CommandHandler("translate", translate))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, hello))
 app.add_handler(CallbackQueryHandler(star_button, pattern= "^star_"))
+app.add_handler(CallbackQueryHandler(quiz_button, pattern= "^quiz_"))
+app.add_handler(CallbackQueryHandler(languages_button, pattern= "^translate_"))
 
 
 
