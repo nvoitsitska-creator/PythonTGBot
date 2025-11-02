@@ -1,6 +1,4 @@
 import re
-from tkinter.commondialog import Dialog
-
 from telegram import Update,InlineKeyboardButton,InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder,CallbackQueryHandler,ContextTypes,CommandHandler,MessageHandler,filters
 import logging
@@ -8,8 +6,6 @@ from gpt import ChatGPTService
 from util import (load_message,load_prompt,send_text,send_image,show_main_menu,
                   default_callback_handler,send_text_buttons)
 from credentials import ChatGPT_TOKEN,BOT_TOKEN
-from telegram.error import Conflict,NetworkError
-from dotenv import load_dotenv
 import os
 import asyncio
 
@@ -87,12 +83,12 @@ async def dialog_with_star(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = load_message('star')
     await send_image(update,context,'star')
     await send_text_buttons(update,context, msg, {
-        "star_shevchenko": "Тарас Шевченко",
-        "star_monro": "Мерлін Монро",
-        "star_opra": "Опра Вімфрі",
-        "star_enshtein": "Альберт Енштейн",
-        "star_vinchi": "Леонардо ДаВінчі",
-        "start": "Повернутися у Головне меню"
+        "star_shevchenko": "Тарас Шевченко 📖",
+        "star_monro": "Мерлін Монро 👩",
+        "star_enshtein": "Альберт Енштейн  🧐",
+        "star_opra": "Опра Вімфрі 💃",
+        "star_vinchi": "Леонардо ДаВінчі 🧑‍🎨",
+        "start": "⬅️ Повернутися у Головне меню"
     })
 
 async def star_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,11 +112,19 @@ async def star_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['current_star'] = data
     context.user_data['mode'] = 'star'
 
-    personality_name = data.replace('star_', '').capitalize()
+    star_title = {
+        "star_shevchenko": "Тарас Шевченко 📖",
+        "star_monro": "Мерлін Монро 👩",
+        "star_enshtein": "Альберт Енштейн  🧐",
+        "star_opra": "Опра Вімфрі 💃",
+        "star_vinchi": "Леонардо ДаВінчі 🧑‍🎨",
+        "start": "⬅️ Повернутися у Головне меню"
+    }
+    ukr_star_title = star_title.get(data, data)
     await send_text_buttons(
         update,
         context,
-        f"👤 Ви почали розмову з *{personality_name}*.\nНадішліть повідомлення, щоб отримати відповідь.",
+        f"👤 Ви почали розмову з {ukr_star_title}.\nНадішліть повідомлення, щоб отримати відповідь.",
         {"start": "⬅️ Повернутись у головне меню"}
     )
 
@@ -133,9 +137,10 @@ async def star_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         prompt = load_prompt(current_star)  # наприклад, star_vinchi.txt
-
+        button = {
+            'start': 'Завершити'}
         answer = await chat_gpt.send_question(prompt, text)
-        await send_text(update, context, answer)
+        await send_text_buttons(update, context, f"Відповідь зірки:\n{answer}", button)
     except Exception as e:
         logger.error(f'Помилка під час діалогу із зіркою: {e}')
         await send_text(update,context,'Виникла помилка під час спілкування. Спробуйте ще раз.')
@@ -172,21 +177,23 @@ async def quiz_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['score']=0
     context.user_data['question_number']=1
 
-    await send_text_buttons(
-        update,
-        context,
-        f"👤 Ви почали квіз на тему *{data}*.\nПерше питання вже готується.",
-        {"start": "⬅️ Повернутись у головне меню"}
-    )
+    quiz_titles = {
+        "quiz_general": "Загальні знання",
+        "quiz_history": "Історичні факти та дати",
+        "quiz_science": "Наукові відкриття",
+        "quiz_art": "Культура і мистецтво"
+    }
+    ukr_title = quiz_titles.get(data, data)
+    await send_text(update,context,f"👤 Ви почали квіз на тему {ukr_title}.\nПерше питання вже готується.")
     await ask_quiz_question(update,context)
 
 async def ask_quiz_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_quiz = context.user_data.get("current_quiz")
     prompt = load_prompt(current_quiz)
-
     question_text = await chat_gpt.send_question(
         prompt,
-        "Згенеруй одне коротке питання для квізу з 4 варіантами відповідей (A–D) і вкажи правильну відповідь у кінці."
+        "Згенеруй одне коротке питання для квізу з 4 варіантами відповідей (A–D) "
+        "і вкажи правильну відповідь у кінці."
     )
     parts = question_text.split("Правильна відповідь:")
     only_question = parts[0].strip()
@@ -199,13 +206,19 @@ async def ask_quiz_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["correct_answer"] = None
 
 async def quiz_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_answer = update.message.text.strip().upper()
+    message = update.message or update.effective_message
+    user_answer = (message.text or "").strip().upper()
+    if not user_answer or user_answer[0] not in "ABCD":
+        await send_text(update,context,"❌ Будь ласка, введіть одну літеру від A до D.")
+        return
+    user_answer = user_answer[0]
     correct = context.user_data.get("correct_answer")
-
     if not correct:
         await send_text(update,context,"⚠️ Спочатку дочекайтесь питання.")
         return
-    if user_answer == correct:
+    correct_letter = correct.strip().upper()[0]
+
+    if user_answer == correct_letter:
         context.user_data["score"] += 1
         await send_image(update,context,"correct_answer")
         await send_text(update,context,f"✅ Правильно! Поточний рахунок: {context.user_data['score']}")
@@ -223,10 +236,10 @@ async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = load_message('translate')
     await send_image(update, context, 'translate')
     await send_text_buttons(update, context, msg, {
-        "translate_english": "Англійська",
-        "translate_spanish": "Іспанська",
-        "translate_polish": "Польська",
-        "translate_arabic": "Арабська",
+        "translate_english": "Англійську 🇬🇧",
+        "translate_spanish": "Іспанську 🇪🇦",
+        "translate_polish": "Польську 🇵🇱",
+        "translate_arabic": "Арабську 🇦🇪",
         "start": "⬅️ Повернутись у головне меню"
     })
 
@@ -250,11 +263,17 @@ async def languages_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['current_language'] = data
     context.user_data['mode'] = 'translate'
 
-    choose_language = data.replace('translate_', '').capitalize()
+    language_titles = {
+        "translate_english": "Англійську",
+        "translate_spanish": "Іспанську",
+        "translate_polish": "Польську",
+        "translate_arabic": "Арабську",
+    }
+    chose_language = language_titles.get(data, data)
     await send_text_buttons(
         update,
         context,
-        f"👤 Ви обрати *{choose_language}* мову.\nНадішліть текст, щоб отримати переклад.",
+        f"👤 Ви обрати {chose_language} мову.\nНадішліть текст, щоб отримати переклад.",
         {"start": "⬅️ Повернутись у головне меню"}
     )
 
