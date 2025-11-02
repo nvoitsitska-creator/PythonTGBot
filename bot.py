@@ -221,14 +221,33 @@ async def quiz_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_answer == correct_letter:
         context.user_data["score"] += 1
         await send_image(update,context,"correct_answer")
-        await send_text(update,context,f"✅ Правильно! Поточний рахунок: {context.user_data['score']}")
+        result_text = f"✅ Правильно! Поточний рахунок: {context.user_data['score']}"
     else:
         await send_image(update, context, "wrong_answer")
-        await send_text(update,context,f"❌ Неправильно. Правильна відповідь: {correct}.Поточний рахунок: {context.user_data['score']}" )
+        result_text = f"❌ Неправильно. Правильна відповідь: {correct}.Поточний рахунок: {context.user_data['score']}"
 
-    context.user_data["question_number"]+=1
-    await asyncio.sleep(1)
-    await ask_quiz_question(update,context)
+    await send_text_buttons(update,context,result_text,{
+        "quiz_dialog": "Продовжити",
+        "quiz_button": "Змінити тему",
+        "start": "Повернутися у головне меню"
+    })
+
+    context.user_data["question_number"]= context.user_data.get("question_number",0) + 1
+
+async def quiz_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data == "quiz_dialog":
+        await send_text(update, context, "🔄 Готую наступне питання...")
+        await ask_quiz_question(update, context)
+    elif data == "quiz_button":
+        await quiz(update,context)
+    elif data == "start":
+        await show_main_menu(update, context)
+    else:
+        await send_text(update, context, "Натисніть необхідні кнопку")
+
 
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -325,6 +344,7 @@ async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE):
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("random", random_fact))
 app.add_handler(CallbackQueryHandler  (random_buttons, pattern="^(random|start)$"))
+app.add_handler(CallbackQueryHandler  (quiz_callback, pattern="^(quiz_dialog|quiz_button|start)$"))
 app.add_handler(CallbackQueryHandler  (translate_buttons, pattern="^(languages_button|start)$"))
 app.add_handler(CommandHandler("gpt", gpt))
 app.add_handler(CommandHandler("talk", dialog_with_star))
