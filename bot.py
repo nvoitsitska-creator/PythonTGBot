@@ -78,7 +78,6 @@ async def random_buttons(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
 async def gpt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_user_mode(context, "gpt")
-    context.user_data['mode'] = 'gpt'
     prompt_text = load_prompt('gpt')
     chat_gpt.set_prompt(prompt_text)
     message = load_message('gpt')
@@ -94,7 +93,6 @@ async def gpt_dialog(update,context):
 @safe_async
 async def dialog_with_star(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_user_mode(context, "star")
-    context.user_data['mode'] = 'star'
     msg = load_message('star')
     await send_image(update,context,'star')
     await send_text_buttons(update,context, msg, {
@@ -156,7 +154,6 @@ async def star_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @safe_async
 async def quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_user_mode(context, "quiz")
-    context.user_data['mode'] = 'quiz'
     msg = load_message('quiz')
     await send_image(update, context, 'quiz')
     await send_text_buttons(update, context, msg, {
