@@ -29,7 +29,8 @@ async def start(update:Update,context: ContextTypes.DEFAULT_TYPE):
         "gpt": "Запитай у чату GPT",
         "talk": "Поговори з відомою особистістю",
         "quiz": "Візьми участь у квізі",
-        "translate": "Перекладу текст"
+        "translate": "Перекладу текст",
+        "cv": "Допоможу скласти резюме"
     })
 
 async def random_fact(update:Update, context:ContextTypes.DEFAULT_TYPE):
@@ -328,6 +329,51 @@ async def translate_buttons(update:Update,context:ContextTypes.DEFAULT_TYPE):
     elif data == "start":
         await start(update,context)
 
+async def cv(update:Update,context:ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    context.user_data['mode'] = 'cv'
+    context.user_data["cv_step"] = 0
+    context.user_data["cv_data"] = {}
+
+    msg = load_message("cv")
+    await send_image(update,context,"cv")
+    await send_text(update,context,msg)
+    await asyncio.sleep(3)
+    await send_text(update,context,"Починаємо створювати ваше резюме! \nЯка у вас освіта?")
+
+async def cv_profile(update:Update,context:ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    step = context.user_data.get("cv_step",0)
+    cv_data = context.user_data.get("cv_data",{})
+
+    if step == 0:
+        cv_data["education"] = text
+        context.user_data["cv_step"] = 1
+        await send_text(update,context,"🧰 Який ваш досвід роботи?")
+        return
+    elif step == 1:
+        cv_data["experience"] = text
+        context.user_data["cv_step"] = 2
+        await send_text(update,context,"💡 Якими навичками ви володієте?")
+        return
+    elif step == 2:
+        cv_data["skills"] = text
+
+        prompt = load_prompt("cv")
+        user_info = (
+            f"Освіта: {cv_data.get('education', '')}\n"
+            f"Досвід роботи: {cv_data.get('experience', '')}\n"
+            f"Навички: {cv_data.get('skills', '')}"
+        )
+
+        await send_text(update, context, "Чат GPT 🧠 генерує ваше резюме, будь ласка, зачекайте.")
+        answer = await chat_gpt.send_question(prompt, user_info)
+        await send_text(update,context,"✅ Ось згенероване резюме:\n\n" + answer)
+
+        context.user_data["mode"] = None
+        context.user_data["cv_step"] = 0
+        context.user_data["cv_data"] = {}
+
 async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = context.user_data.get('mode')
     if mode == 'gpt':
@@ -338,6 +384,8 @@ async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await quiz_dialog(update,context)
     elif mode == "translate":
         await translate_answer(update,context)
+    elif mode == "cv":
+        await cv_profile(update,context)
     else:
         await send_text(update,context, "Будь ласка, оберіть команду з меню.")
 
@@ -350,6 +398,7 @@ app.add_handler(CommandHandler("gpt", gpt))
 app.add_handler(CommandHandler("talk", dialog_with_star))
 app.add_handler(CommandHandler("quiz", quiz))
 app.add_handler(CommandHandler("translate", translate))
+app.add_handler(CommandHandler("cv", cv))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, hello))
 app.add_handler(CallbackQueryHandler(star_button, pattern= "^star_"))
 app.add_handler(CallbackQueryHandler(quiz_button, pattern= "^quiz_"))

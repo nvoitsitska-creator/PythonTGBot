@@ -24,7 +24,7 @@ To run the Telegram bot, execute:
 
 python bot.py
 
-Interact with your bot in Telegram to start exploring features, answering quizzes,
+Interact with your bot in Telegram to start exploring features, help with CV, answering quizzes,
 translating text, and enjoying fun facts.
 
 ## Features
@@ -38,3 +38,5 @@ The ability to start a dialogue with your favorite celebrity in an imaginary con
 Interactive quiz with questions, evaluation and scoring.
 ### Translater:
 Fast text translation between different languages.
+### CV:
+Help you create a CV.
