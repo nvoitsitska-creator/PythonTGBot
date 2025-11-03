@@ -8,7 +8,20 @@ from util import (load_message,load_prompt,send_text,send_image,show_main_menu,
 from credentials import ChatGPT_TOKEN,BOT_TOKEN
 import os
 import asyncio
+from constants import QUIZ_TITLES, STAR_TITLES, LANGUAGE_TITLES
 
+def reset_user_mode(context, mode_name: str):
+    context.user_data.clear()
+    context.user_data["mode"] = mode_name
+
+def safe_async(func):
+    async def wrapper(update, context, *args, **kwargs):
+        try:
+            await func(update, context, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"Помилка у {func.__name__}: {e}")
+            await send_text(update, context, "⚠️ Виникла технічна помилка. Спробуйте пізніше.")
+    return wrapper
 
 logging.basicConfig(
     format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -33,6 +46,7 @@ async def start(update:Update,context: ContextTypes.DEFAULT_TYPE):
         "cv": "Допоможу скласти резюме"
     })
 
+@safe_async
 async def random_fact(update:Update, context:ContextTypes.DEFAULT_TYPE):
     await send_image(update,context,'random')
     message = await send_text(update,context, "Зачекай. Я шукаю цікавий факт ...")
@@ -52,7 +66,6 @@ async def random_fact(update:Update, context:ContextTypes.DEFAULT_TYPE):
         await send_text(update,context, "Нажаль виникла помилка. Спробуйте ще раз")
         await context.bot.delete_message(chat_id=update.effective_chat.id, message_id=message.message_id)
 
-
 async def random_buttons(update:Update,context:ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -64,7 +77,7 @@ async def random_buttons(update:Update,context:ContextTypes.DEFAULT_TYPE):
         await start(update,context)
 
 async def gpt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
+    reset_user_mode(context, "gpt")
     context.user_data['mode'] = 'gpt'
     prompt_text = load_prompt('gpt')
     chat_gpt.set_prompt(prompt_text)
@@ -78,8 +91,9 @@ async def gpt_dialog(update,context):
     answer = await chat_gpt.send_question(prompt,text)
     await send_text(update,context,answer)
 
+@safe_async
 async def dialog_with_star(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
+    reset_user_mode(context, "star")
     context.user_data['mode'] = 'star'
     msg = load_message('star')
     await send_image(update,context,'star')
@@ -92,6 +106,7 @@ async def dialog_with_star(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "start": "⬅️ Повернутися у Головне меню"
     })
 
+@safe_async
 async def star_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -113,15 +128,7 @@ async def star_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['current_star'] = data
     context.user_data['mode'] = 'star'
 
-    star_title = {
-        "star_shevchenko": "Тарас Шевченко 📖",
-        "star_monro": "Мерлін Монро 👩",
-        "star_enshtein": "Альберт Енштейн  🧐",
-        "star_opra": "Опра Вімфрі 💃",
-        "star_vinchi": "Леонардо ДаВінчі 🧑‍🎨",
-        "start": "⬅️ Повернутися у Головне меню"
-    }
-    ukr_star_title = star_title.get(data, data)
+    ukr_star_title = STAR_TITLES.get(data, data)
     await send_text_buttons(
         update,
         context,
@@ -146,8 +153,9 @@ async def star_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f'Помилка під час діалогу із зіркою: {e}')
         await send_text(update,context,'Виникла помилка під час спілкування. Спробуйте ще раз.')
 
+@safe_async
 async def quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
+    reset_user_mode(context, "quiz")
     context.user_data['mode'] = 'quiz'
     msg = load_message('quiz')
     await send_image(update, context, 'quiz')
@@ -159,6 +167,7 @@ async def quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "start":"⬅️ Повернутись у головне меню"
     })
 
+@safe_async
 async def quiz_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -178,16 +187,11 @@ async def quiz_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['score']=0
     context.user_data['question_number']=1
 
-    quiz_titles = {
-        "quiz_general": "Загальні знання",
-        "quiz_history": "Історичні факти та дати",
-        "quiz_science": "Наукові відкриття",
-        "quiz_art": "Культура і мистецтво"
-    }
-    ukr_title = quiz_titles.get(data, data)
+    ukr_title = QUIZ_TITLES.get(data, data)
     await send_text(update,context,f"👤 Ви почали квіз на тему {ukr_title}.\nПерше питання вже готується.")
     await ask_quiz_question(update,context)
 
+@safe_async
 async def ask_quiz_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_quiz = context.user_data.get("current_quiz")
     prompt = load_prompt(current_quiz)
@@ -206,6 +210,9 @@ async def ask_quiz_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         context.user_data["correct_answer"] = None
 
+max_questions = 5
+
+@safe_async
 async def quiz_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message or update.effective_message
     user_answer = (message.text or "").strip().upper()
@@ -227,13 +234,27 @@ async def quiz_dialog(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_image(update, context, "wrong_answer")
         result_text = f"❌ Неправильно. Правильна відповідь: {correct}.Поточний рахунок: {context.user_data['score']}"
 
-    await send_text_buttons(update,context,result_text,{
-        "quiz_dialog": "Продовжити",
-        "quiz_button": "Змінити тему",
-        "start": "Повернутися у головне меню"
-    })
+    question_number = context.user_data.get("question_number",1)
+    context.user_data["question_number"] = question_number + 1
 
-    context.user_data["question_number"]= context.user_data.get("question_number",0) + 1
+    if question_number >= max_questions:
+        final_score = context.user_data["score"]
+        text = (
+            f"{result_text}\n\n🏁 Квіз завершено!\n"
+            f"Ваш фінальний рахунок: {final_score} із {max_questions}."
+        )
+        buttons = {
+            "quiz_button": "🎯 Почати новий квіз",
+            "start": "⬅️ Повернутись у головне меню"
+        }
+    else:
+        text = result_text
+        buttons = {
+            "quiz_dialog": "Продовжити",
+            "quiz_button": "Змінити тему",
+            "start": "Повернутися у головне меню"
+        }
+    await send_text_buttons(update, context, text, buttons)
 
 async def quiz_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -249,9 +270,9 @@ async def quiz_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await send_text(update, context, "Натисніть необхідні кнопку")
 
-
+@safe_async
 async def translate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
+    reset_user_mode(context, "translate")
     context.user_data['mode'] = 'translate'
     msg = load_message('translate')
     await send_image(update, context, 'translate')
@@ -283,13 +304,7 @@ async def languages_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['current_language'] = data
     context.user_data['mode'] = 'translate'
 
-    language_titles = {
-        "translate_english": "Англійську",
-        "translate_spanish": "Іспанську",
-        "translate_polish": "Польську",
-        "translate_arabic": "Арабську",
-    }
-    chose_language = language_titles.get(data, data)
+    chose_language = LANGUAGE_TITLES.get(data, data)
     await send_text_buttons(
         update,
         context,
@@ -313,7 +328,6 @@ async def translate_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'start': 'Завершити'}
 
         await send_text_buttons(update, context,answer,buttons)
-        # await send_text(update, context, answer)
 
     except Exception as e:
         logger.error(f'Помилка під час перекладу: {e}')
@@ -330,7 +344,7 @@ async def translate_buttons(update:Update,context:ContextTypes.DEFAULT_TYPE):
         await start(update,context)
 
 async def cv(update:Update,context:ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
+    reset_user_mode(context, "cv")
     context.user_data['mode'] = 'cv'
     context.user_data["cv_step"] = 0
     context.user_data["cv_data"] = {}
@@ -368,7 +382,8 @@ async def cv_profile(update:Update,context:ContextTypes.DEFAULT_TYPE):
 
         await send_text(update, context, "Чат GPT 🧠 генерує ваше резюме, будь ласка, зачекайте.")
         answer = await chat_gpt.send_question(prompt, user_info)
-        await send_text(update,context,"✅ Ось згенероване резюме:\n\n" + answer)
+        button = {"start": "Повернутися у головне меню"}
+        await send_text_buttons(update,context,"✅ Ось згенероване резюме:\n\n" + answer,button)
 
         context.user_data["mode"] = None
         context.user_data["cv_step"] = 0
@@ -403,7 +418,6 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, hello))
 app.add_handler(CallbackQueryHandler(star_button, pattern= "^star_"))
 app.add_handler(CallbackQueryHandler(quiz_button, pattern= "^quiz_"))
 app.add_handler(CallbackQueryHandler(languages_button, pattern= "^translate_"))
-
 
 
 app.run_polling()
