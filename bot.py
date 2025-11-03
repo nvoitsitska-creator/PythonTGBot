@@ -386,7 +386,7 @@ async def cv_profile(update:Update,context:ContextTypes.DEFAULT_TYPE):
         context.user_data["cv_step"] = 0
         context.user_data["cv_data"] = {}
 
-async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def dialog_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mode = context.user_data.get('mode')
     if mode == 'gpt':
         await gpt_dialog(update,context)
@@ -411,7 +411,7 @@ app.add_handler(CommandHandler("talk", dialog_with_star))
 app.add_handler(CommandHandler("quiz", quiz))
 app.add_handler(CommandHandler("translate", translate))
 app.add_handler(CommandHandler("cv", cv))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, hello))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, dialog_mode))
 app.add_handler(CallbackQueryHandler(star_button, pattern= "^star_"))
 app.add_handler(CallbackQueryHandler(quiz_button, pattern= "^quiz_"))
 app.add_handler(CallbackQueryHandler(languages_button, pattern= "^translate_"))
